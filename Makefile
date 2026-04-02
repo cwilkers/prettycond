@@ -35,3 +35,7 @@ build: ## Build the release binary (target/release/prettycond).
 .PHONY: clean
 clean: ## Remove Cargo build artifacts (target/).
 	cargo clean
+
+.PHONY: test
+test: ## Run unit tests (formatting, sorting, JSON path errors).
+	cargo test
