@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Library interface for parsing Kubernetes condition JSON and formatting tables.
 
 use anyhow::{anyhow, Result};

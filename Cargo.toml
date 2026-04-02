@@ -3,6 +3,7 @@ name = "prettycond"
 version = "0.1.0"
 edition = "2021"
 description = "Print Kubernetes CR conditions from piped JSON as a readable table"
+license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"

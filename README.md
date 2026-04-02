@@ -78,3 +78,7 @@ Path segments are simple dot-separated keys (for example `status.someGroup.condi
 ## Condition shape
 
 Each entry is expected to be a JSON object with optional fields such as `type`, `status`, `reason`, and `lastTransitionTime` (RFC3339). Missing string fields are shown as `-`. Rows that are not JSON objects are skipped, with a warning on standard error.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) or <https://www.apache.org/licenses/LICENSE-2.0>.
