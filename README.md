@@ -79,6 +79,10 @@ Path segments are simple dot-separated keys (for example `status.someGroup.condi
 
 Each entry is expected to be a JSON object with optional fields such as `type`, `status`, `reason`, and `lastTransitionTime` (RFC3339). Missing string fields are shown as `-`. Rows that are not JSON objects are skipped, with a warning on standard error.
 
+## Attribution
+
+Substantial parts of this project (design, Rust implementation, tests, build wiring, and documentation) were written with assistance from the **Cursor** IDE and its **AI coding agent** ([cursor.com](https://cursor.com)). Human maintainers remain responsible for the shipped code.
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) or <https://www.apache.org/licenses/LICENSE-2.0>.

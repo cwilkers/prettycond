@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Developed with assistance from the Cursor AI coding agent (https://cursor.com).
 
 use anyhow::{Context, Result};
 use chrono::Utc;

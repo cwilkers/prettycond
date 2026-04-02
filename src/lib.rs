@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Library interface for parsing Kubernetes condition JSON and formatting tables.
+//!
+//! Developed with assistance from the [Cursor](https://cursor.com) AI coding agent; human
+//! maintainers retain responsibility for the result.
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
