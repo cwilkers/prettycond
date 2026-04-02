@@ -39,6 +39,22 @@ struct Args {
     sort_time: bool,
 }
 
+/// Guidance when `kubectl`/`oc` table output (or other non-JSON) is piped in by mistake.
+fn json_parse_context(stdin: &str) -> String {
+    let t = stdin.trim_start();
+    let mut msg = String::from(
+        "expected JSON on stdin.\n",
+    );
+    if t.is_empty() {
+        msg.push_str("\t(stdin was empty or whitespace only.)");
+    } else if !t.starts_with('{') && !t.starts_with('[') {
+        msg.push_str(
+            "\tInput does not start with `{` or `[` (did you forget to add `-ojson`?)",
+        );
+    }
+    msg
+}
+
 fn sort_mode_from_args(args: &Args) -> SortMode {
     if args.unsorted {
         SortMode::Unsorted
@@ -59,7 +75,8 @@ fn main() -> Result<()> {
         .read_to_string(&mut buf)
         .context("read STDIN")?;
 
-    let root: Value = serde_json::from_str(&buf).context("parse JSON from STDIN")?;
+    let root: Value = serde_json::from_str(&buf)
+        .with_context(|| json_parse_context(&buf))?;
 
     let now = Utc::now();
     let mode = sort_mode_from_args(&args);
