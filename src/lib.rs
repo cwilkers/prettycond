@@ -213,6 +213,90 @@ pub fn table_header_strings() -> Vec<String> {
     TABLE_HEADER.iter().map(|s| (*s).to_string()).collect()
 }
 
+/// `true` when `root` looks like a Kubernetes `List` (`kind: List` with an `items` array).
+pub fn is_kubernetes_list(root: &Value) -> bool {
+    let Some(obj) = root.as_object() else {
+        return false;
+    };
+    if obj.get("kind").and_then(|v| v.as_str()) != Some("List") {
+        return false;
+    }
+    obj.get("items").is_some_and(|v| v.is_array())
+}
+
+/// References to each entry in a Kubernetes list document, sorted by namespace then name.
+pub fn kubernetes_list_items_sorted<'a>(root: &'a Value) -> Option<Vec<&'a Value>> {
+    if !is_kubernetes_list(root) {
+        return None;
+    }
+    let items = root.get("items")?.as_array()?;
+    let mut refs: Vec<&Value> = items.iter().collect();
+    refs.sort_by(|a, b| resource_sort_key(a).cmp(&resource_sort_key(b)));
+    Some(refs)
+}
+
+/// Namespace and name for ordering (`namespace` is `""` when absent, e.g. cluster-scoped).
+pub fn resource_sort_key(obj: &Value) -> (String, String) {
+    let meta = obj.get("metadata").and_then(|m| m.as_object());
+    let ns = meta
+        .and_then(|m| m.get("namespace"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let name = meta
+        .and_then(|m| m.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    (ns, name)
+}
+
+/// One-line label for a resource stanza (`Kind name` or `Kind namespace/name`).
+pub fn resource_stanza_title(obj: &Value) -> String {
+    let kind = obj.get("kind").and_then(|v| v.as_str()).unwrap_or("Object");
+    let (ns, name) = resource_sort_key(obj);
+    if name.is_empty() {
+        kind.to_string()
+    } else if ns.is_empty() {
+        format!("{kind} {name}")
+    } else {
+        format!("{kind} {ns}/{name}")
+    }
+}
+
+/// Format stdin-style JSON: either one object or a Kubernetes `List` from `kubectl get … -o json`.
+///
+/// For a **List**, items are ordered by namespace then name. Each item gets a title line, then
+/// the condition table (`path` is evaluated relative to that item). Condition sorting uses
+/// `mode` / `reverse` per item. For a **single object**, behavior matches [`format_condition_table`]
+/// (no title line).
+pub fn format_kubernetes_document(
+    root: &Value,
+    path: &str,
+    mode: SortMode,
+    reverse: bool,
+    no_header: bool,
+    now: DateTime<Utc>,
+) -> Result<Vec<String>> {
+    if let Some(items) = kubernetes_list_items_sorted(root) {
+        let mut all = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+            if i > 0 {
+                all.push(String::new());
+            }
+            let title = resource_stanza_title(item);
+            all.push(title);
+            match format_condition_table(item, path, mode, reverse, no_header, now) {
+                Ok(mut lines) => all.append(&mut lines),
+                Err(e) => all.push(format!("  # {e}")),
+            }
+        }
+        Ok(all)
+    } else {
+        format_condition_table(root, path, mode, reverse, no_header, now)
+    }
+}
+
 /// Full table as lines (including optional header), for tests and inspection.
 pub fn format_condition_table(
     root: &Value,
@@ -460,5 +544,92 @@ mod tests {
         assert_eq!(lines.len(), 5);
         assert!(lines[0].starts_with("CondTypeLongNameOne"));
         assert!(lines[1].starts_with("CondTypeB"));
+    }
+
+    #[test]
+    fn single_document_no_stanza_title() {
+        let root = sample_cr_json();
+        let now = fixed_now();
+        let lines = format_kubernetes_document(
+            &root,
+            "status.conditions",
+            SortMode::Type,
+            false,
+            false,
+            now,
+        )
+        .unwrap();
+        assert!(
+            lines[0].contains("TYPE"),
+            "expected table header first, got {:?}",
+            lines.first()
+        );
+    }
+
+    #[test]
+    fn kubernetes_list_sorts_resources_by_namespace_then_name() {
+        let root = serde_json::json!({
+            "kind": "List",
+            "apiVersion": "v1",
+            "items": [
+                {"kind": "Pod", "metadata": {"name": "zebra", "namespace": "ns-b"}, "status": {"conditions": [
+                    {"type": "Ready", "status": "True", "lastTransitionTime": "2026-04-02T14:47:00Z"}
+                ]}},
+                {"kind": "Pod", "metadata": {"name": "alpha", "namespace": "ns-a"}, "status": {"conditions": [
+                    {"type": "Ready", "status": "True", "lastTransitionTime": "2026-04-02T14:47:00Z"}
+                ]}},
+                {"kind": "Pod", "metadata": {"name": "mule", "namespace": "ns-a"}, "status": {"conditions": [
+                    {"type": "Ready", "status": "True", "lastTransitionTime": "2026-04-02T14:47:00Z"}
+                ]}},
+            ]
+        });
+        let now = fixed_now();
+        let lines = format_kubernetes_document(
+            &root,
+            "status.conditions",
+            SortMode::Type,
+            false,
+            true,
+            now,
+        )
+        .unwrap();
+        let joined = lines.join("\n");
+        let pos_a_mule = joined.find("Pod ns-a/mule").expect("mule stanza");
+        let pos_a_alpha = joined.find("Pod ns-a/alpha").expect("alpha stanza");
+        let pos_b_zebra = joined.find("Pod ns-b/zebra").expect("zebra stanza");
+        assert!(pos_a_alpha < pos_a_mule);
+        assert!(pos_a_mule < pos_b_zebra);
+    }
+
+    #[test]
+    fn kubernetes_list_sorts_conditions_within_each_item() {
+        let root = serde_json::json!({
+            "kind": "List",
+            "items": [
+                {"kind": "Pod", "metadata": {"name": "p", "namespace": "n"}, "status": {"conditions": [
+                    {"type": "Zeta", "status": "True", "lastTransitionTime": "2026-04-02T14:47:00Z"},
+                    {"type": "Alpha", "status": "True", "lastTransitionTime": "2026-04-02T14:47:00Z"},
+                ]}},
+            ]
+        });
+        let now = fixed_now();
+        let lines = format_kubernetes_document(
+            &root,
+            "status.conditions",
+            SortMode::Type,
+            false,
+            true,
+            now,
+        )
+        .unwrap();
+        let idx_alpha = lines
+            .iter()
+            .position(|l| l.starts_with("Alpha"))
+            .expect("Alpha row");
+        let idx_zeta = lines
+            .iter()
+            .position(|l| l.starts_with("Zeta"))
+            .expect("Zeta row");
+        assert!(idx_alpha < idx_zeta);
     }
 }

@@ -50,6 +50,16 @@ Ready                      True    -       29h ago
 The default JSON path is `status.conditions` (a dot-separated path to an array of condition objects, or a single object).
 If the object you want to inspect has its conditions in a different path, you can alter them with the `--path` option.
 
+### Multiple resources (`kubectl get … -o json`)
+
+If the document is a Kubernetes **List** (`kind: List` with an `items` array), each element is handled separately. Output is one **stanza** per resource: a title line `Kind namespace/name` (or `Kind name` when there is no namespace), a blank line before every stanza after the first, then the usual condition table for that object.
+
+Resources are ordered by **`metadata.namespace` then `metadata.name`** (empty namespace sorts first, for cluster-scoped objects). Sort flags (`-s`, `-t`, `-U`, default type sort, and `-r`) apply **only to the condition rows within each resource**, not to the list of resources.
+
+```bash
+kubectl get pods -n myns -o json | prettycond
+```
+
 ```bash
 $ kubectl get myCR example -o json | prettycond --path status.customConditions
 

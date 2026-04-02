@@ -4,16 +4,15 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use clap::Parser;
-use prettycond::{
-    column_widths, condition_row_from_object, format_padded_line, sort_rows, table_header_strings,
-    walk_path, ConditionRow, SortMode,
-};
+use prettycond::{format_kubernetes_document, SortMode};
 use serde_json::Value;
 use std::io::{self, Read};
 
 #[derive(Parser, Debug)]
 #[command(name = "prettycond")]
-#[command(about = "Read a Kubernetes CR from STDIN and print conditions as columns.")]
+#[command(
+    about = "Read a Kubernetes CR or List JSON from STDIN and print status conditions as columns."
+)]
 struct Args {
     /// Dot-separated JSON path to the conditions array (e.g. status.conditions)
     #[arg(long, default_value = "status.conditions")]
@@ -61,35 +60,20 @@ fn main() -> Result<()> {
         .context("read STDIN")?;
 
     let root: Value = serde_json::from_str(&buf).context("parse JSON from STDIN")?;
-    let items = walk_path(&root, &args.path)?;
 
     let now = Utc::now();
-    let header = table_header_strings();
-
-    let mut rows: Vec<ConditionRow> = Vec::new();
-    for item in items {
-        let Some(obj) = item.as_object() else {
-            eprintln!("warning: skipping non-object condition entry");
-            continue;
-        };
-        rows.push(condition_row_from_object(obj, now));
-    }
-
     let mode = sort_mode_from_args(&args);
-    sort_rows(&mut rows, mode, args.reverse);
+    let lines = format_kubernetes_document(
+        &root,
+        &args.path,
+        mode,
+        args.reverse,
+        args.no_header,
+        now,
+    )?;
 
-    let display_rows: Vec<Vec<String>> = rows.iter().map(ConditionRow::to_cells).collect();
-
-    let widths = column_widths(
-        if args.no_header { None } else { Some(&header) },
-        &display_rows,
-    );
-
-    if !args.no_header {
-        println!("{}", format_padded_line(&header, &widths));
-    }
-    for row in &display_rows {
-        println!("{}", format_padded_line(row, &widths));
+    for line in lines {
+        println!("{line}");
     }
 
     Ok(())
